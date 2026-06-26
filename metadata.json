@@ -1,0 +1,6 @@
+{
+  "name": "Hindi Text to Audio with Voice Matcher",
+  "description": "Convert English or Hindi text into high-quality spoken Hindi audio matching the voice characteristics (gender, pitch, tone) of an uploaded audio sample.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
