@@ -24,6 +24,9 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
   const [result, setResult] = useState<SpeechGenerationResult | null>(null);
   const [systemError, setSystemError] = useState<string | null>(null);
 
+  // Target Speech Language Accent
+  const [targetLanguage, setTargetLanguage] = useState<"hi" | "en">("hi");
+
   // Offline Native Speech Synthesis states
   const [synthesisMode, setSynthesisMode] = useState<"cloud" | "offline">("cloud");
   const [localVoices, setLocalVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -82,11 +85,11 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
       const allVoices = window.speechSynthesis.getVoices();
       
       // Filter for Hindi (hi) and English (en) voices to display a clean adapter set
-      const filtered = allVoices.filter(v => v.lang.startsWith("hi") || v.lang.startsWith("en"));
+      const filtered = allVoices.filter(v => v.lang.toLowerCase().startsWith("hi") || v.lang.toLowerCase().startsWith("en"));
       setLocalVoices(filtered);
 
       // Prefer Hindi-specific native voice, or fall back to high-quality english
-      const bestDefault = filtered.find(v => v.lang.startsWith("hi")) || filtered[0] || allVoices[0];
+      const bestDefault = filtered.find(v => v.lang.toLowerCase().startsWith("hi")) || filtered[0] || allVoices[0];
       if (bestDefault && !selectedLocalVoiceName) {
         setSelectedLocalVoiceName(bestDefault.name);
       }
@@ -103,6 +106,15 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
       }
     };
   }, []);
+
+  // Automatically select an appropriate local voice when target language changes
+  useEffect(() => {
+    if (localVoices.length === 0) return;
+    const match = localVoices.find(v => v.lang.toLowerCase().startsWith(targetLanguage));
+    if (match) {
+      setSelectedLocalVoiceName(match.name);
+    }
+  }, [targetLanguage, localVoices]);
 
   const selectPreset = (presetId: string) => {
     const preset = PRESET_TEXTS.find((p) => p.id === presetId);
@@ -180,14 +192,16 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
     // Stop active speech playback if any
     handleStopOfflineSpeak();
 
-    // Match preset texts for instant high-fidelity local Hindi translations
+    // Match preset texts for instant high-fidelity local translations
     const presetMatch = PRESET_TEXTS.find(
       (p) =>
         p.english.toLowerCase().replace(/\s+/g, " ").trim() === inputText.toLowerCase().replace(/\s+/g, " ").trim() ||
         p.hindi.toLowerCase().replace(/\s+/g, " ").trim() === inputText.toLowerCase().replace(/\s+/g, " ").trim()
     );
-    const resolvedHindi = presetMatch ? presetMatch.hindi : inputText;
-    setOfflineTranslatedScript(resolvedHindi);
+    const resolvedText = presetMatch 
+      ? (targetLanguage === "hi" ? presetMatch.hindi : presetMatch.english) 
+      : inputText;
+    setOfflineTranslatedScript(resolvedText);
 
     // If User forced offline mode, execute client-side speech instantly
     if (synthesisMode === "offline") {
@@ -195,7 +209,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
       // Simulate quick biometrics routing/vocal matching delay
       setTimeout(() => {
         setIsGenerating(false);
-        speakOffline(resolvedHindi);
+        speakOffline(resolvedText);
       }, 1000);
       return;
     }
@@ -215,6 +229,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
           customTone: customTone,
           speed: speed,
           pitch: pitch,
+          targetLanguage: targetLanguage,
         }),
       });
 
@@ -235,7 +250,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
       setSynthesisMode("offline");
       setSystemError("Notice: Cloud AI endpoint is currently offline or busy. Automatically adapted to unlimited-use Local Hardware Voice Synthesis fallback.");
       setIsGenerating(false);
-      speakOffline(resolvedHindi);
+      speakOffline(resolvedText);
     } finally {
       setIsGenerating(false);
     }
@@ -285,6 +300,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
           customTone: customTone,
           speed: speed,
           pitch: pitch,
+          targetLanguage: targetLanguage,
         }),
       });
 
@@ -369,6 +385,42 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
           </div>
         </div>
       )}
+
+      {/* Target Language / Accent Selector */}
+      <div className="mb-5 text-left bg-white/3 border border-white/5 p-4 rounded-2xl" id="vocal-language-selector">
+        <div className="flex items-center gap-2 mb-3">
+          <Speech className="h-4 w-4 text-[#ff4e00]" />
+          <span className="text-[10px] uppercase font-bold tracking-widest text-[#ffb491]">
+            Target Speech Accent & Language:
+          </span>
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setTargetLanguage("hi")}
+            className={`flex-1 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-medium ${
+              targetLanguage === "hi"
+                ? "bg-[#ff4e00]/20 border-[#ff4e00] text-white shadow-[0_0_12px_rgba(255,78,0,0.2)] font-semibold"
+                : "bg-white/5 border-white/10 text-white/60 hover:bg-white/8 hover:text-white"
+            }`}
+          >
+            <span className="text-base">🇮🇳</span>
+            <span className="text-xs">Hindi (हिन्दी / Swara)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTargetLanguage("en")}
+            className={`flex-1 py-2.5 px-4 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-medium ${
+              targetLanguage === "en"
+                ? "bg-[#ff4e00]/20 border-[#ff4e00] text-white shadow-[0_0_12px_rgba(255,78,0,0.2)] font-semibold"
+                : "bg-white/5 border-white/10 text-white/60 hover:bg-white/8 hover:text-white"
+            }`}
+          >
+            <span className="text-base">🇬🇧</span>
+            <span className="text-xs">English (English)</span>
+          </button>
+        </div>
+      </div>
 
       {/* Preset template cards */}
       <div className="mb-4 text-left">
@@ -504,7 +556,11 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
             setInputText(e.target.value);
             setActivePresetId(null);
           }}
-          placeholder="Type whatever you'd like spoken in Hindi (or paste English text to auto-translate and speak in Hindi in the matched voice)..."
+          placeholder={
+            targetLanguage === "hi"
+              ? "Type whatever you'd like spoken in Hindi (or paste English text to auto-translate and speak in Hindi in the matched voice)..."
+              : "Type whatever you'd like spoken in English (or paste Hindi text to auto-translate and speak in English in the matched voice)..."
+          }
           className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-1 focus:ring-[#ff4e00] focus:border-[#ff4e00] text-sm text-white placeholder-white/20 transition outline-none"
         />
         <div className="absolute bottom-3 right-3 text-[10px] text-white/30 font-semibold select-none">
@@ -542,9 +598,9 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
               Offline Direct Synthesis: Unlimited runs, 0 latency, adapts matching pitch & rate of {matchedVoice}.
             </span>
           ) : referenceAudio ? (
-            "✨ Reference voice loaded. Your generated Hindi audio will mimic the tempo, emotion, and apparent qualities of the speaker."
+            `✨ Reference voice loaded. Your generated ${targetLanguage === "hi" ? "Hindi" : "English"} audio will mimic the tempo, emotion, and apparent qualities of the speaker.`
           ) : (
-            "ℹ️ No custom reference audio. Speech will generate using standard prebuilt clean Hindi synthesis."
+            `ℹ️ No custom reference audio. Speech will generate using standard prebuilt clean ${targetLanguage === "hi" ? "Hindi" : "English"} synthesis.`
           )}
         </div>
 
@@ -644,7 +700,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
             <div className="space-y-4">
               <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Offline Active Script</h4>
-                <p className="text-lg font-medium text-[#ffb491] leading-relaxed hindi-font">
+                <p className={`text-lg font-medium text-[#ffb491] leading-relaxed ${targetLanguage === "hi" ? "hindi-font" : ""}`}>
                   {offlineTranslatedScript || inputText}
                 </p>
               </div>
@@ -678,7 +734,7 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
         </div>
       )}
 
-      {/* Complete Hindi audio card result (Cloud Mode Result) */}
+      {/* Complete audio card result (Cloud Mode Result) */}
       {!isGenerating && result && (
         <div className="mt-6 p-6 bg-[#ff4e00]/5 border border-[#ff4e00]/20 rounded-2xl text-left animate-in fade-in duration-300">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-white/10">
@@ -686,7 +742,9 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
               <span className="text-[9px] font-bold text-[#ff4e00] uppercase tracking-widest flex items-center gap-1">
                 <Sparkles className="h-3 w-3" /> Output Generated Successfully
               </span>
-              <h3 className="text-lg font-medium text-white mt-1">Spoken Hindi Audio</h3>
+              <h3 className="text-lg font-medium text-white mt-1">
+                Spoken {targetLanguage === "hi" ? "Hindi" : "English"} Audio
+              </h3>
             </div>
 
             <button
@@ -703,15 +761,19 @@ export default function SpeechSynthesizer({ referenceAudio, matchedVoice }: Spee
             {/* Displaying translation */}
             <div className="space-y-4">
               <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Translated Hindi Script</h4>
-                <p className="text-lg font-medium text-[#ffb491] leading-relaxed hindi-font">
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5">
+                  Translated {targetLanguage === "hi" ? "Hindi" : "English"} Script
+                </h4>
+                <p className={`text-lg font-medium text-[#ffb491] leading-relaxed ${targetLanguage === "hi" ? "hindi-font" : ""}`}>
                   {result.translatedText}
                 </p>
               </div>
 
               {inputText.toLowerCase() !== result.translatedText.toLowerCase() && (
                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Original English Prompt</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5">
+                    Original Prompt
+                  </h4>
                   <p className="text-xs text-white/60 leading-relaxed italic">
                     "{inputText}"
                   </p>

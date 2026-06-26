@@ -178,7 +178,7 @@ Provide your response in JSON format matching this schema:
 // 2. Audio Generation + Voice Mimicry + Audio Formatting
 app.post("/api/generate-audio", async (req, res) => {
   try {
-    const { text, voiceName, audioBase64, audioMimeType, emotion, customTone, speed, pitch } = req.body;
+    const { text, voiceName, audioBase64, audioMimeType, emotion, customTone, speed, pitch, targetLanguage = "hi" } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "Missing or empty text content to translate/speak." });
     }
@@ -192,30 +192,55 @@ app.post("/api/generate-audio", async (req, res) => {
         p.hindi.toLowerCase().replace(/\s+/g, " ").trim() === text.toLowerCase().replace(/\s+/g, " ").trim()
     );
 
-    let translatedHindi = text;
+    let translatedText = text;
 
     if (matchingPreset) {
       console.log(`[Cache Hit] Preset translation found: "${matchingPreset.title}"`);
-      translatedHindi = matchingPreset.hindi;
-    } else if (/[\u0900-\u097F]/.test(text)) {
-      // 2. Already contains Devanagari characters (Hindi). Skip flash model translate call!
-      console.log("[Optimization] Input text already contains Hindi characters. skipping translation call.");
-      translatedHindi = text;
-    } else {
-      // 3. Perform network translation with robust fallback in case of rate-limiting
-      try {
-        const translationResponse = await withRetry(() =>
-          ai.models.generateContent({
-            model: "gemini-3.5-flash",
-            contents: `Translate the following text into elegant, highly natural spoken Hindi.
+      translatedText = targetLanguage === "hi" ? matchingPreset.hindi : matchingPreset.english;
+    } else if (targetLanguage === "hi") {
+      if (/[\u0900-\u097F]/.test(text)) {
+        // Already contains Devanagari characters (Hindi). Skip flash model translate call!
+        console.log("[Optimization] Input text already contains Hindi characters. skipping translation call.");
+        translatedText = text;
+      } else {
+        // Perform network translation with robust fallback in case of rate-limiting
+        try {
+          const translationResponse = await withRetry(() =>
+            ai.models.generateContent({
+              model: "gemini-3.5-flash",
+              contents: `Translate the following text into elegant, highly natural spoken Hindi.
 Provide ONLY the final translation. Do not include any pronunciation guides, phonetic words, or other comments. Keep exact punctuation and meaning preserved:
 "${text}"`,
-          })
-        );
-        translatedHindi = translationResponse.text?.trim() || text;
-      } catch (e: any) {
-        console.log("Handled standard translation fallback (API limit reached).");
-        translatedHindi = text; // Fallback to original text so synthesis can try to read it
+            })
+          );
+          translatedText = translationResponse.text?.trim() || text;
+        } catch (e: any) {
+          console.log("Handled standard translation fallback (API limit reached).");
+          translatedText = text; // Fallback to original text so synthesis can try to read it
+        }
+      }
+    } else {
+      // targetLanguage === "en"
+      if (/^[a-zA-Z0-9\s.,!?'"()-]+$/.test(text)) {
+        // Already contains English characters. Skip flash model translate call!
+        console.log("[Optimization] Input text already contains English characters. skipping translation call.");
+        translatedText = text;
+      } else {
+        // Perform translation from Hindi/other to spoken English
+        try {
+          const translationResponse = await withRetry(() =>
+            ai.models.generateContent({
+              model: "gemini-3.5-flash",
+              contents: `Translate the following text into elegant, highly natural spoken English.
+Provide ONLY the final translation. Do not include any translation guides, explanations, or other comments. Keep exact punctuation and meaning preserved:
+"${text}"`,
+            })
+          );
+          translatedText = translationResponse.text?.trim() || text;
+        } catch (e: any) {
+          console.log("Handled standard English translation fallback (API limit reached).");
+          translatedText = text; // Fallback to original text
+        }
       }
     }
 
@@ -264,15 +289,16 @@ Provide ONLY the final translation. Do not include any pronunciation guides, pho
       }
     }
 
-    const ttsPrompt = `Please synthesize ONLY the Hindi script inside the XML tags <hindi_script>...</hindi_script>.
-You are strictly forbidden from speaking any of the English instructions, tag names, or styling prompts. Speak ONLY the exact Hindi script characters inside the tag.
+    const scriptTag = targetLanguage === "hi" ? "hindi_script" : "english_script";
+    const ttsPrompt = `Please synthesize ONLY the script inside the XML tags <${scriptTag}>...</${scriptTag}>.
+You are strictly forbidden from speaking any of the instructions, tag names, or styling prompts. Speak ONLY the exact script characters inside the tag.
 
 Performance Style Guidelines:
 - Primary Emotion & Tone: ${toneDescription}
 - Delivery Speed & Prosody: ${speedDescription}
 - Intonation & Pitch Curve: ${pitchDescription}
 
-<hindi_script>${translatedHindi}</hindi_script>`;
+<${scriptTag}>${translatedText}</${scriptTag}>`;
 
     const configuredVoice = voiceName || "Zephyr";
 
@@ -303,7 +329,7 @@ Performance Style Guidelines:
 
     res.json({
       success: true,
-      translatedText: translatedHindi,
+      translatedText: translatedText,
       wavBase64: wavBase64,
     });
 
